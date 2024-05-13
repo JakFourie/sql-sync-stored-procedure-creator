@@ -51,7 +51,7 @@ def generate_stored_procedure(target_table, source_table, columns):
          for col in columns])
 
     script = [
-        "USE [DW_SSK]",
+        "USE [DW]",
         "GO",
         "/****** Object:  StoredProcedure [dbo].[{}] ******/".format(procedure_name),
         "SET ANSI_NULLS ON",
@@ -75,9 +75,8 @@ def generate_stored_procedure(target_table, source_table, columns):
         "    WHERE ",
         "        {};".format(where_conditions),
         "    -- Delete records that no longer exist in the source",
-        "    DELETE FROM target",  # Make sure 'FROM target' is correctly aliased
-        "    USING ",
-        "        {} target".format(target_table),  # Correctly formatted to include 'target' alias
+        "    DELETE target",  # Make sure 'FROM target' is correctly aliased
+        "    FROM {} target".format(target_table),  # Correctly formatted to include 'target' alias
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
         "        FROM {} src".format(source_table),
