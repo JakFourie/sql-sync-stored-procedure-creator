@@ -97,11 +97,11 @@ GO
 
 def run():
     st.set_page_config(
-        page_title="MS SQL Stored Procedure Generator",
+        page_title="MS SQL Sync Stored Procedure Generator",
         page_icon="↔️",
     )
 
-    st.title('MS SQL Stored Procedure Generator')
+    st.title('MS SQL Sync Stored Procedure Generator')
     st.text('Enter the source and target tables. Enter the field names and types.')
     st.text('Click generate.')
     st.text('Edit the provided stored procedure further if required.')
