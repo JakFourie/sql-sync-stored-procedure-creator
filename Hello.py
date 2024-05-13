@@ -30,65 +30,67 @@ def default_value(data_type):
 
 
 def generate_stored_procedure(target_table, source_table, columns):
-    procedure_name = f"stp_sync_{target_table.replace('[dbo].[', '').replace(']', '')}"
+    procedure_name = "stp_sync_{}".format(target_table.replace('[dbo].[', '').replace(']', ''))
     
     set_statements = ",\n        ".join(
-        [f"target.{col['name']} = COALESCE(src.{col['name']}, {default_value(col['type'])})" if 'uniqueidentifier' not in col['type'] else f"target.{col['name']} = ISNULL(src.{col['name']}, '00000000-0000-0000-0000-000000000000')" for col in columns])
+        ["target.{0} = COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) if 'uniqueidentifier' not in col['type'] else "target.{0} = ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) for col in columns])
     where_conditions = " OR\n        ".join(
-        [f"(target.{col['name']} IS NOT NULL AND src.{col['name']} IS NOT NULL AND target.{col['name']} <> src.{col['name']})" for col in columns])
+        ["(target.{0} IS NOT NULL AND src.{0} IS NOT NULL AND target.{0} <> src.{0})".format(col['name']) for col in columns])
 
-    script_parts = [
-        "USE [DW]",
+    insert_columns = ",\n        ".join([col['name'] for col in columns])
+    select_columns = ",\n        ".join(["ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) for col in columns])
+
+    script = [
+        "USE [DW_SSK]",
         "GO",
-        f"/****** Object:  StoredProcedure [dbo].[{procedure_name}] ******/",
+        "/****** Object:  StoredProcedure [dbo].[{}] ******/".format(procedure_name),
         "SET ANSI_NULLS ON",
         "GO",
         "SET QUOTED_IDENTIFIER ON",
         "GO",
-        f"CREATE OR ALTER PROCEDURE [dbo].[{procedure_name}]",
+        "CREATE OR ALTER PROCEDURE [dbo].[{}]".format(procedure_name),
         "AS",
         "BEGIN",
         "    SET NOCOUNT ON;",
         "    -- Update existing records only if changes are detected",
         "    UPDATE target",
         "    SET ",
-        f"        {set_statements}",
+        "        {}".format(set_statements),
         "    FROM ",
-        f"        {target_table} target",
+        "        {} target".format(target_table),
         "    INNER JOIN ",
-        f"        {source_table} src",
+        "        {} src".format(source_table),
         "    ON ",
         "        target.InstructionId = src.Id",
         "    WHERE ",
-        f"        {where_conditions};",
+        "        {};".format(where_conditions),
         "    -- Delete records that no longer exist in the source",
         "    DELETE target",
         "    FROM ",
-        f"        {target_table} target",
+        "        {}".format(target_table),
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
-        f"        FROM {source_table} src",
+        "        FROM {}".format(source_table),
         "        WHERE target.InstructionId = src.Id",
         "    );",
         "    -- Insert new records",
-        "    INSERT INTO {target_table} (",
-        f"        {',\n        '.join([col['name'] for col in columns])}",
+        "    INSERT INTO {} (".format(target_table),
+        "        {}".format(insert_columns),
         "    )",
         "    SELECT ",
-        f"        {',\n        '.join([f'ISNULL(src.{col['name']}, \'00000000-0000-0000-0000-000000000000\')' if 'uniqueidentifier' in col['type'] else f'COALESCE(src.{col['name']}, {default_value(col['type'])})' for col in columns])}",
+        "        {}".format(select_columns),
         "    FROM ",
-        f"        {source_table} src",
+        "        {}".format(source_table),
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
-        f"        FROM {target_table} target",
+        "        FROM {} target".format(target_table),
         "        WHERE target.InstructionId = src.Id",
         "    );",
         "END",
         "GO"
     ]
 
-    return "\n".join(script_parts)
-
+    return "\n".join(script)
 
 
 def run():
