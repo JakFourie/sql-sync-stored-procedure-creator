@@ -37,62 +37,57 @@ def generate_stored_procedure(target_table, source_table, columns):
     where_conditions = " OR\n        ".join(
         [f"(target.{col['name']} IS NOT NULL AND src.{col['name']} IS NOT NULL AND target.{col['name']} <> src.{col['name']})" for col in columns])
 
-    script = f"""
-USE [DW_SSK]
-GO
+    script_parts = [
+        "USE [DW]",
+        "GO",
+        f"/****** Object:  StoredProcedure [dbo].[{procedure_name}] ******/",
+        "SET ANSI_NULLS ON",
+        "GO",
+        "SET QUOTED_IDENTIFIER ON",
+        "GO",
+        f"CREATE OR ALTER PROCEDURE [dbo].[{procedure_name}]",
+        "AS",
+        "BEGIN",
+        "    SET NOCOUNT ON;",
+        "    -- Update existing records only if changes are detected",
+        "    UPDATE target",
+        "    SET ",
+        f"        {set_statements}",
+        "    FROM ",
+        f"        {target_table} target",
+        "    INNER JOIN ",
+        f"        {source_table} src",
+        "    ON ",
+        "        target.InstructionId = src.Id",
+        "    WHERE ",
+        f"        {where_conditions};",
+        "    -- Delete records that no longer exist in the source",
+        "    DELETE target",
+        "    FROM ",
+        f"        {target_table} target",
+        "    WHERE NOT EXISTS (",
+        "        SELECT 1",
+        f"        FROM {source_table} src",
+        "        WHERE target.InstructionId = src.Id",
+        "    );",
+        "    -- Insert new records",
+        "    INSERT INTO {target_table} (",
+        f"        {',\n        '.join([col['name'] for col in columns])}",
+        "    )",
+        "    SELECT ",
+        f"        {',\n        '.join([f'ISNULL(src.{col['name']}, \'00000000-0000-0000-0000-000000000000\')' if 'uniqueidentifier' in col['type'] else f'COALESCE(src.{col['name']}, {default_value(col['type'])})' for col in columns])}",
+        "    FROM ",
+        f"        {source_table} src",
+        "    WHERE NOT EXISTS (",
+        "        SELECT 1",
+        f"        FROM {target_table} target",
+        "        WHERE target.InstructionId = src.Id",
+        "    );",
+        "END",
+        "GO"
+    ]
 
-/****** Object:  StoredProcedure [dbo].[{procedure_name}] ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-
-CREATE OR ALTER PROCEDURE [dbo].[{procedure_name}]
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    -- Update existing records only if changes are detected
-    UPDATE target
-    SET 
-        {set_statements}
-    FROM 
-        {target_table} target
-    INNER JOIN 
-        {source_table} src
-    ON 
-        target.InstructionId = src.Id
-    WHERE 
-        {where_conditions};
-
-    -- Delete records that no longer exist in the source
-    DELETE target
-    FROM 
-        {target_table} target
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM {source_table} src
-        WHERE target.InstructionId = src.Id
-    );
-
-    -- Insert new records
-    INSERT INTO {target_table} (
-        {",\n        ".join([col['name'] for col in columns])}
-    )
-    SELECT 
-        {",\n        ".join([f"ISNULL(src.{col['name']}, '00000000-0000-0000-0000-000000000000')" if 'uniqueidentifier' in col['type'] else f"COALESCE(src.{col['name']}, {default_value(col['type'])})" for col in columns])}
-    FROM 
-        {source_table} src
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM {target_table} target
-        WHERE target.InstructionId = src.Id
-    );
-END
-GO
-"""
-
-    return script
+    return "\n".join(script_parts)
 
 
 
