@@ -39,7 +39,10 @@ def generate_stored_procedure(target_table, source_table, columns):
     first_column_name = columns[0]['name']  # Dynamically get the first column name for the join condition
 
     set_statements = ",\n        ".join(
-        ["target.{0} = COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) if 'uniqueidentifier' not in col['type'] else "target.{0} = ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) for col in columns])
+        ["target.{0} = COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) 
+         if 'uniqueidentifier' not in col['type'] else 
+         "target.{0} = ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name'])
+         for col in columns])
     where_conditions = " OR\n        ".join(
         ["COALESCE(target.{0}, {1}) <> COALESCE(src.{0}, {1}){2}".format(
             col['name'], 
@@ -48,7 +51,7 @@ def generate_stored_procedure(target_table, source_table, columns):
          for col in columns])
 
     script = [
-        "USE [DW]",
+        "USE [DW_SSK]",
         "GO",
         "/****** Object:  StoredProcedure [dbo].[{}] ******/".format(procedure_name),
         "SET ANSI_NULLS ON",
@@ -64,7 +67,7 @@ def generate_stored_procedure(target_table, source_table, columns):
         "    SET ",
         "        {}".format(set_statements),
         "    FROM ",
-        "        {} target".format(target_table),
+        "        {} target".format(target_table),  # Correctly formatted to include 'target' alias
         "    INNER JOIN ",
         "        {} src".format(source_table),
         "    ON ",
@@ -72,25 +75,28 @@ def generate_stored_procedure(target_table, source_table, columns):
         "    WHERE ",
         "        {};".format(where_conditions),
         "    -- Delete records that no longer exist in the source",
-        "    DELETE target",
-        "    FROM ",
-        "        {}".format(target_table),
+        "    DELETE FROM target",  # Make sure 'FROM target' is correctly aliased
+        "    USING ",
+        "        {} target".format(target_table),  # Correctly formatted to include 'target' alias
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
-        "        FROM {}".format(source_table),
-        "        WHERE target.{} = src.{}".format(first_column_name, first_column_name),  # Use the first column name for deletion check
+        "        FROM {} src".format(source_table),
+        "        WHERE target.{} = src.{}".format(first_column_name, first_column_name),  # Assuming first column is the joining key
         "    );",
         "    -- Insert new records",
         "    INSERT INTO {} (".format(target_table),
         "        {}".format(",\n        ".join([col['name'] for col in columns])),
         "    )",
         "    SELECT ",
-        "        {}".format(",\n        ".join(["ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) for col in columns])),
+        "        {}".format(",\n        ".join([
+            "ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else 
+            "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type']))
+            for col in columns])),
         "    FROM ",
-        "        {}".format(source_table),
+        "        {} src".format(source_table),
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
-        "        FROM {} target".format(target_table),
+        "        FROM {} target".format(target_table),  # Correctly formatted to include 'target' alias
         "        WHERE target.{} = src.{}".format(first_column_name, first_column_name),  # Use the first column name for insertion check
         "    );",
         "END",
@@ -98,6 +104,7 @@ def generate_stored_procedure(target_table, source_table, columns):
     ]
 
     return "\n".join(script)
+
 
 
 
