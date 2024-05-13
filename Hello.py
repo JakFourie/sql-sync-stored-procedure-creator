@@ -114,9 +114,13 @@ def run():
     columns = []
     columns_number = st.number_input('Number of Columns', min_value=0, max_value=20, step=1, value=1)
     for i in range(columns_number):
-        col_name = st.text_input(f'Column {i+1} Name', value="Column_Name")
-        col_type = st.selectbox(f'Column {i+1} Type', options=["int", "uniqueidentifier", "nvarchar(50)", "date", "decimal(10, 3)", "bit"], index=2, key=i)
-        columns.append({'name': col_name, 'type': col_type})
+        with st.container():
+            col1, col2 = st.columns(2)
+            with col1:
+                col_name = st.text_input(f'Column {i+1} Name', value="Column_Name", key=f"name_{i}")
+            with col2:
+                col_type = st.selectbox(f'Column {i+1} Type', options=["int", "uniqueidentifier", "nvarchar(50)", "date", "decimal(10, 3)", "bit"], index=2, key=f"type_{i}")
+            columns.append({'name': col_name, 'type': col_type})
 
     if st.button('Generate Stored Procedure'):
         script = generate_stored_procedure(target_table, source_table, columns)
