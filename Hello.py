@@ -31,14 +31,21 @@ def default_value(data_type):
 
 def generate_stored_procedure(target_table, source_table, columns):
     procedure_name = "stp_sync_{}".format(target_table.replace('[dbo].[', '').replace(']', ''))
-    
+
+    # Ensure there is at least one column provided
+    if not columns:
+        raise ValueError("No columns provided for the stored procedure.")
+
+    first_column_name = columns[0]['name']  # Dynamically get the first column name for the join condition
+
     set_statements = ",\n        ".join(
         ["target.{0} = COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) if 'uniqueidentifier' not in col['type'] else "target.{0} = ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) for col in columns])
     where_conditions = " OR\n        ".join(
-        ["(target.{0} IS NOT NULL AND src.{0} IS NOT NULL AND target.{0} <> src.{0})".format(col['name']) for col in columns])
-
-    insert_columns = ",\n        ".join([col['name'] for col in columns])
-    select_columns = ",\n        ".join(["ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) for col in columns])
+        ["COALESCE(target.{0}, {1}) <> COALESCE(src.{0}, {1}){2}".format(
+            col['name'], 
+            default_value(col['type']), 
+            " COLLATE DATABASE_DEFAULT" if 'nvarchar' in col['type'] else "")
+         for col in columns])
 
     script = [
         "USE [DW]",
@@ -61,7 +68,7 @@ def generate_stored_procedure(target_table, source_table, columns):
         "    INNER JOIN ",
         "        {} src".format(source_table),
         "    ON ",
-        "        target.InstructionId = src.Id",
+        "        target.{} = src.{}".format(first_column_name, first_column_name),  # Use the first column name for the join
         "    WHERE ",
         "        {};".format(where_conditions),
         "    -- Delete records that no longer exist in the source",
@@ -71,26 +78,27 @@ def generate_stored_procedure(target_table, source_table, columns):
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
         "        FROM {}".format(source_table),
-        "        WHERE target.InstructionId = src.Id",
+        "        WHERE target.{} = src.{}".format(first_column_name, first_column_name),  # Use the first column name for deletion check
         "    );",
         "    -- Insert new records",
         "    INSERT INTO {} (".format(target_table),
-        "        {}".format(insert_columns),
+        "        {}".format(",\n        ".join([col['name'] for col in columns])),
         "    )",
         "    SELECT ",
-        "        {}".format(select_columns),
+        "        {}".format(",\n        ".join(["ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) for col in columns])),
         "    FROM ",
         "        {}".format(source_table),
         "    WHERE NOT EXISTS (",
         "        SELECT 1",
         "        FROM {} target".format(target_table),
-        "        WHERE target.InstructionId = src.Id",
+        "        WHERE target.{} = src.{}".format(first_column_name, first_column_name),  # Use the first column name for insertion check
         "    );",
         "END",
         "GO"
     ]
 
     return "\n".join(script)
+
 
 
 def run():
