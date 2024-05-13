@@ -41,7 +41,7 @@ def generate_stored_procedure(target_table, source_table, columns):
     select_columns = ",\n        ".join(["ISNULL(src.{0}, '00000000-0000-0000-0000-000000000000')".format(col['name']) if 'uniqueidentifier' in col['type'] else "COALESCE(src.{0}, {1})".format(col['name'], default_value(col['type'])) for col in columns])
 
     script = [
-        "USE [DW_SSK]",
+        "USE [DW]",
         "GO",
         "/****** Object:  StoredProcedure [dbo].[{}] ******/".format(procedure_name),
         "SET ANSI_NULLS ON",
