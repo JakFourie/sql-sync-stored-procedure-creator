@@ -19,30 +19,29 @@ LOGGER = get_logger(__name__)
 
 
 def default_value(data_type):
-    if "int" in data_type or "decimal" in data_type:
+    if "uniqueidentifier" in data_type:
+        return "'00000000-0000-0000-0000-000000000000'"  # Valid nil UUID
+    elif "int" in data_type or "decimal" in data_type:
         return "0"
     elif "bit" in data_type:
-        return "0"  # Assuming 0 as default for bit
-    elif "uniqueidentifier" in data_type:
-        return "''"  # Assuming empty string for GUIDs (UUIDs)
+        return "0"
     else:
         return "''"
+
 
 def generate_stored_procedure(target_table, source_table, columns):
     procedure_name = f"stp_sync_{target_table.replace('[dbo].[', '').replace(']', '')}"
     
     set_statements = ",\n        ".join(
-        [f"target.{col['name']} = COALESCE(src.{col['name']}, {default_value(col['type'])})" for col in columns])
+        [f"target.{col['name']} = COALESCE(src.{col['name']}, {default_value(col['type'])})" if 'uniqueidentifier' not in col['type'] else f"target.{col['name']} = ISNULL(src.{col['name']}, '00000000-0000-0000-0000-000000000000')" for col in columns])
     where_conditions = " OR\n        ".join(
-        [f"COALESCE(target.{col['name']}, {default_value(col['type'])}) <> COALESCE(src.{col['name']}, {default_value(col['type'])})" for col in columns])
-    insert_columns = ",\n        ".join([col['name'] for col in columns])
-    select_columns = ",\n        ".join([f"COALESCE(src.{col['name']}, {default_value(col['type'])})" for col in columns])
+        [f"(target.{col['name']} IS NOT NULL AND src.{col['name']} IS NOT NULL AND target.{col['name']} <> src.{col['name']})" for col in columns])
 
     script = f"""
 USE [DW_SSK]
 GO
 
-/****** Object:  StoredProcedure [dbo].[{procedure_name}] ******
+/****** Object:  StoredProcedure [dbo].[{procedure_name}] ******/
 SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
@@ -78,10 +77,10 @@ BEGIN
 
     -- Insert new records
     INSERT INTO {target_table} (
-        {insert_columns}
+        {",\n        ".join([col['name'] for col in columns])}
     )
     SELECT 
-        {select_columns}
+        {",\n        ".join([f"ISNULL(src.{col['name']}, '00000000-0000-0000-0000-000000000000')" if 'uniqueidentifier' in col['type'] else f"COALESCE(src.{col['name']}, {default_value(col['type'])})" for col in columns])}
     FROM 
         {source_table} src
     WHERE NOT EXISTS (
@@ -94,6 +93,8 @@ GO
 """
 
     return script
+
+
 
 def run():
     st.set_page_config(
@@ -109,6 +110,10 @@ def run():
     # User inputs
     target_table = st.text_input('Target Table Name', '[dbo].[tbl_dw_Target]')
     source_table = st.text_input('Source Table Name', '[SRV-SQL].[DB].[dbo].[Source]')
+
+    st.markdown("""
+    **Note:** The first entry below is treated as the unique ID column. This column is used to match records between the source and target tables for updates, deletions, and insertions.
+    """)
 
     # Dynamic columns
     columns = []
